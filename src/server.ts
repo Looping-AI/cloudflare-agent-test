@@ -1,15 +1,25 @@
 import { createWorkersAI } from "workers-ai-provider";
-import { callable, routeAgentRequest, type Schedule } from "agents";
+import { Agent, callable, routeAgentRequest, type Schedule } from "agents";
+import { ChatSdkStateAgent, createChatSdkState } from "agents/chat-sdk";
 import { getSchedulePrompt, scheduleSchema } from "agents/schedule";
 import { AIChatAgent, type OnChatMessageOptions } from "@cloudflare/ai-chat";
+import { Chat, type Message, type Thread } from "chat";
+import { createSlackAdapter } from "@chat-adapter/slack";
 import {
   convertToModelMessages,
+  generateText,
   pruneMessages,
   stepCountIs,
   streamText,
   tool
 } from "ai";
 import { z } from "zod";
+
+// Re-export so the Agents SDK can resolve it as a sub-agent facet via
+// ctx.exports["ChatSdkStateAgent"]. The Slack Chat SDK state adapter
+// (createChatSdkState) spawns this for thread locks/dedupe/state. It runs as
+// a facet of SlackAgent's DO, so it needs no separate binding or migration.
+export { ChatSdkStateAgent };
 
 export class ChatAgent extends AIChatAgent<Env> {
   maxPersistedMessages = 100;
@@ -199,8 +209,94 @@ If the user asks to schedule a task, use the schedule tool to schedule the task.
   }
 }
 
+export class SlackAgent extends Agent<Env> {
+  private slack!: ReturnType<typeof createSlackAdapter>;
+  private chat!: Chat;
+
+  async onStart() {
+    this.slack = createSlackAdapter({
+      botToken: this.env.SLACK_BOT_TOKEN,
+      signingSecret: this.env.SLACK_SIGNING_SECRET,
+      mode: "webhook"
+    });
+
+    this.chat = new Chat({
+      userName: "ai-bot",
+      adapters: { slack: this.slack },
+      state: createChatSdkState()
+    });
+
+    const workersai = createWorkersAI({ binding: this.env.AI });
+
+    const aiHandler = async (thread: Thread, message: Message) => {
+      try {
+        const { text } = await generateText({
+          model: workersai("@cf/moonshotai/kimi-k2.6"),
+          system:
+            "You are a helpful assistant. You can check the weather, perform calculations, and answer questions.",
+          prompt: message.text,
+          tools: {
+            getWeather: tool({
+              description: "Get the current weather for a city",
+              inputSchema: z.object({
+                city: z.string().describe("City name")
+              }),
+              execute: async ({ city }) => {
+                const conditions = ["sunny", "cloudy", "rainy", "snowy"];
+                const temp = Math.floor(Math.random() * 30) + 5;
+                return {
+                  city,
+                  temperature: temp,
+                  condition:
+                    conditions[Math.floor(Math.random() * conditions.length)],
+                  unit: "celsius"
+                };
+              }
+            })
+          },
+          stopWhen: stepCountIs(5)
+        });
+        await thread.post(text);
+      } catch (err) {
+        const detail =
+          err instanceof Error
+            ? `${err.name}: ${err.message}\n${err.stack ?? ""}`
+            : JSON.stringify(err);
+        console.error("Slack AI handler error ->", detail);
+        await thread
+          .post(`:warning: Sorry, I hit an error: ${detail.slice(0, 500)}`)
+          .catch(() => {});
+      }
+    };
+
+    this.chat.onNewMention(aiHandler);
+    this.chat.onDirectMessage(aiHandler);
+
+    await this.chat.initialize();
+  }
+
+  async onRequest(request: Request): Promise<Response> {
+    const body = await request
+      .clone()
+      .json()
+      .catch(() => ({})) as { type?: string; challenge?: string };
+    if (body.type === "url_verification") {
+      return Response.json({ challenge: body.challenge });
+    }
+    return this.slack.handleWebhook(request);
+  }
+}
+
 export default {
   async fetch(request: Request, env: Env) {
+    const url = new URL(request.url);
+
+    if (url.pathname === "/slack/events") {
+      const id = env.SlackAgent.idFromName("default");
+      const stub = env.SlackAgent.get(id);
+      return stub.fetch(request);
+    }
+
     return (
       (await routeAgentRequest(request, env)) ||
       new Response("Not found", { status: 404 })

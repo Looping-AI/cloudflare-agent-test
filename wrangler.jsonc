@@ -16,13 +16,17 @@
   "assets": {
     "directory": "./public",
     "not_found_handling": "single-page-application",
-    "run_worker_first": ["/agents/*", "/oauth/*"]
+    "run_worker_first": ["/agents/*", "/oauth/*", "/slack/events"]
   },
   "durable_objects": {
     "bindings": [
       {
         "class_name": "ChatAgent",
         "name": "ChatAgent"
+      },
+      {
+        "class_name": "SlackAgent",
+        "name": "SlackAgent"
       }
     ]
   },
@@ -30,6 +34,10 @@
     {
       "new_sqlite_classes": ["ChatAgent"],
       "tag": "v1"
+    },
+    {
+      "new_sqlite_classes": ["SlackAgent"],
+      "tag": "v2"
     }
   ],
   "observability": {

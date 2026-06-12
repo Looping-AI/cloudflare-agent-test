@@ -3,11 +3,14 @@
 declare namespace Cloudflare {
 	interface GlobalProps {
 		mainModule: typeof import("./src/server");
-		durableNamespaces: "ChatAgent";
+		durableNamespaces: "ChatAgent" | "SlackAgent";
 	}
 	interface Env {
 		AI: Ai;
 		ChatAgent: DurableObjectNamespace<import("./src/server").ChatAgent>;
+		SlackAgent: DurableObjectNamespace<import("./src/server").SlackAgent>;
+		SLACK_BOT_TOKEN: string;
+		SLACK_SIGNING_SECRET: string;
 	}
 }
 interface Env extends Cloudflare.Env {}
