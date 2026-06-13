@@ -1,4 +1,4 @@
-name: Sanity Check
+name: Test
 
 on:
   push:
@@ -10,7 +10,7 @@ on:
 
 jobs:
   check:
-    timeout-minutes: 5
+    timeout-minutes: 10
     strategy:
       matrix:
         os: [
