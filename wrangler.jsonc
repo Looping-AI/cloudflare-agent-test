@@ -26,6 +26,18 @@
       "tag": "v1"
     }
   ],
+  "workflows": [
+    {
+      "name": "message-workflow",
+      "binding": "MESSAGE_WORKFLOW",
+      "class_name": "MessageWorkflow"
+    },
+    {
+      "name": "lifecycle-workflow",
+      "binding": "LIFECYCLE_WORKFLOW",
+      "class_name": "LifecycleWorkflow"
+    }
+  ],
   "observability": {
     "enabled": true
   },

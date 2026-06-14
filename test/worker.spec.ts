@@ -5,8 +5,6 @@ import {
   waitOnExecutionContext
 } from "cloudflare:test";
 
-// Prevent the Slack adapter from making real API calls (auth.test) during DO initialization.
-// Without this, onStart() blocks indefinitely waiting for the Slack API response.
 vi.mock("@chat-adapter/slack", () => ({
   createSlackAdapter: () => ({
     name: "slack",
@@ -21,44 +19,37 @@ import worker from "../src/server";
 describe("Worker routing", () => {
   it("returns 404 for GET /", async () => {
     const ctx = createExecutionContext();
-    const response = await worker.fetch(
-      new Request("http://localhost/"),
-      env,
-      ctx
-    );
+    const res = await worker.fetch(new Request("http://localhost/"), env, ctx);
     await waitOnExecutionContext(ctx);
-    expect(response.status).toBe(404);
+    expect(res.status).toBe(404);
   });
 
   it("returns 404 for unknown paths", async () => {
     const ctx = createExecutionContext();
-    const response = await worker.fetch(
+    const res = await worker.fetch(
       new Request("http://localhost/some-unknown-path"),
       env,
       ctx
     );
     await waitOnExecutionContext(ctx);
-    expect(response.status).toBe(404);
+    expect(res.status).toBe(404);
   });
 
-  it("handles Slack url_verification challenge", async () => {
+  it("routes POST /slack/events to the Slack webhook handler", async () => {
+    // A missing-signature request reaching the handler proves routing works;
+    // the full ingress pipeline is tested in slack-webhook-handler.spec.ts.
     const ctx = createExecutionContext();
-    const body = {
-      type: "url_verification",
-      challenge: "test-challenge-token-xyz"
-    };
-    const response = await worker.fetch(
+    const res = await worker.fetch(
       new Request("http://localhost/slack/events", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(body)
+        body: JSON.stringify({ type: "url_verification", challenge: "x" })
       }),
       env,
       ctx
     );
     await waitOnExecutionContext(ctx);
-    expect(response.status).toBe(200);
-    const json: { challenge: string } = await response.json();
-    expect(json.challenge).toBe("test-challenge-token-xyz");
+    // No signature headers → 401 from the handler (proves routing reached it)
+    expect(res.status).toBe(401);
   });
 });

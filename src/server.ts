@@ -13,6 +13,12 @@ import {
   getScheduledTasks,
   cancelScheduledTask
 } from "./tools";
+import { handleSlackEvent } from "./slack-webhook-handler";
+
+// Cloudflare resolves Workflow `class_name`s (wrangler.jsonc) from the entry
+// module's exports, just like Durable Objects.
+export { MessageWorkflow } from "./workflows/message";
+export { LifecycleWorkflow } from "./workflows/lifecycle";
 
 // Re-export so the Agents SDK can resolve it as a sub-agent facet via
 // ctx.exports["ChatSdkStateAgent"]. The Slack Chat SDK state adapter
@@ -37,9 +43,6 @@ export class SlackAgent extends Agent<Env> {
       state: createChatSdkState()
     });
 
-    // To add an MCP server programmatically:
-    // await this.addMcpServer("my-server", "https://my-mcp-server.example.com/sse");
-
     const workersai = createWorkersAI({ binding: this.env.AI });
 
     const aiHandler = async (thread: Thread, message: Message) => {
@@ -55,7 +58,6 @@ ${getSchedulePrompt({ date: new Date() })}
 If the user asks to schedule a task, use the scheduleTask tool.`,
           prompt: message.text,
           tools: {
-            // MCP tools from any connected servers
             ...this.mcp.getAITools(),
 
             getWeather: tool({
@@ -149,12 +151,17 @@ export default {
   async fetch(request: Request, env: Env, _ctx: ExecutionContext) {
     const url = new URL(request.url);
 
-    if (url.pathname === "/slack/events") {
-      const id = env.SlackAgent.idFromName("default");
-      const agentDurableObject = env.SlackAgent.get(id);
-      return agentDurableObject.fetch(request);
+    // Slack webhook ingest — verify signature, classify event, trigger the
+    // matching durable Workflow, and ack within Slack's 3s budget. All agent
+    // work happens asynchronously inside the Workflow, never inline here.
+    if (request.method === "POST" && url.pathname === "/slack/events") {
+      return handleSlackEvent(request, env);
     }
 
+    // Agents SDK routing — handles WebSocket upgrades and RPC calls to in-repo
+    // agent DOs at /agents/{ClassName}/{instanceName}. Required now for
+    // SlackAgent and load-bearing for Phase 4-5 when Admin and Onboarding
+    // agents come online as A2A servers.
     return (
       (await routeAgentRequest(request, env)) ||
       new Response("Not found", { status: 404 })
