@@ -1,5 +1,6 @@
 import { callSlackApi, assertSlackOk } from "@chat-adapter/slack/api";
 import type { SlackApiResponse } from "@chat-adapter/slack/api";
+import { pickDisplayName } from "@/util/display-name";
 
 // Thin, cursor-paginated wrappers over the Slack reads the chat SDK doesn't
 // cover. `callSlackApi` only throws on HTTP errors, so we assertSlackOk to
@@ -35,24 +36,20 @@ export interface SlackUserInfo {
   id: string;
   displayName: string | null;
   isPrimaryOwner: boolean;
-  isOrgAdmin: boolean;
   deleted: boolean;
   teamId?: string;
 }
 
 function normalizeMember(m: SlackMember): SlackUserInfo {
-  const display =
-    m.profile?.display_name?.trim() ||
-    m.profile?.real_name?.trim() ||
-    m.name ||
-    null;
+  const display = pickDisplayName(
+    m.profile?.display_name,
+    m.profile?.real_name,
+    m.name
+  );
   return {
     id: m.id,
     displayName: display,
     isPrimaryOwner: m.is_primary_owner === true,
-    // Org admin is the umbrella: owner, primary owner, or workspace admin.
-    isOrgAdmin:
-      m.is_owner === true || m.is_admin === true || m.is_primary_owner === true,
     deleted: m.deleted === true,
     teamId: m.team_id
   };
@@ -121,12 +118,20 @@ export async function findChannelIdByName(
 }
 
 /** The bot's own Slack user id, used to skip the bot in membership handling. */
+// Cached per bot token: auth.test is called once per isolate lifetime (the bot
+// user id never changes while the token is in use).
+const botUserIdCache = new Map<string, string | null>();
+
 export async function getBotUserId(env: SlackEnv): Promise<string | null> {
+  const cached = botUserIdCache.get(env.SLACK_BOT_TOKEN);
+  if (cached !== undefined) return cached;
   const res = await callSlackApi<AuthTestResponse>(
     "auth.test",
     {},
     { token: env.SLACK_BOT_TOKEN }
   );
   assertSlackOk("auth.test", res);
-  return res.user_id ?? null;
+  const id = res.user_id ?? null;
+  botUserIdCache.set(env.SLACK_BOT_TOKEN, id);
+  return id;
 }

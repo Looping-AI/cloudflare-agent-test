@@ -1,6 +1,6 @@
 import { WorkflowEntrypoint } from "cloudflare:workers";
 import type { WorkflowEvent, WorkflowStep } from "cloudflare:workers";
-import type { MessageWorkflowParams } from "../slack-webhook-handler";
+import type { MessageWorkflowParams } from "@/slack/types";
 
 /**
  * Durable, retriable handler for a user-addressed Slack message

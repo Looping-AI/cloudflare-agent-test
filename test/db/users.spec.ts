@@ -4,8 +4,7 @@ import { getDb } from "@/db/client";
 import {
   upsertSlackUser,
   getSlackUser,
-  markUserDeleted,
-  listSlackUserIds
+  markUserDeleted
 } from "@/db/models/users";
 
 const db = getDb(env);
@@ -41,14 +40,6 @@ describe("slack_users", () => {
     await upsertSlackUser(db, { slackUserId: "U_del" });
     await markUserDeleted(db, "U_del", true);
     expect((await getSlackUser(db, "U_del"))?.deleted).toBe(true);
-  });
-
-  it("lists known user ids", async () => {
-    await upsertSlackUser(db, { slackUserId: "U_list1" });
-    await upsertSlackUser(db, { slackUserId: "U_list2" });
-    const ids = await listSlackUserIds(db);
-    expect(ids.has("U_list1")).toBe(true);
-    expect(ids.has("U_list2")).toBe(true);
   });
 
   it("returns null for an unknown user", async () => {

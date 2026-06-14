@@ -9,7 +9,7 @@ import { getDb } from "@/db/client";
 import { getSlackUser } from "@/db/models/users";
 import { upsertWorkspace } from "@/db/models/workspaces";
 import { listWorkspaceAdminIds } from "@/db/models/workspace-admins";
-import type { LifecycleWorkflowParams } from "@/slack-webhook-handler";
+import type { LifecycleWorkflowParams } from "@/slack/types";
 
 const db = getDb(env);
 const BOT = "UBOT";
@@ -28,15 +28,7 @@ describe("handleTeamJoin", () => {
         type: "team_join",
         userId: "U_new",
         teamId: "T1",
-        raw: {
-          event: {
-            user: {
-              id: "U_new",
-              name: "newbie",
-              profile: { real_name: "New Bie" }
-            }
-          }
-        }
+        displayName: "New Bie"
       })
     );
     const u = await getSlackUser(db, "U_new");

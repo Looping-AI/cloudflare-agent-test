@@ -78,14 +78,6 @@ export async function markUserDeleted(
     .where(eq(schema.slackUsers.slackUserId, slackUserId));
 }
 
-/** All known user ids. */
-export async function listSlackUserIds(db: Db): Promise<Set<string>> {
-  const rows = await db
-    .select({ id: schema.slackUsers.slackUserId })
-    .from(schema.slackUsers);
-  return new Set(rows.map((r) => r.id));
-}
-
 /**
  * Currently-active user ids (deleted = false). Used for reconcile's
  * deactivation sweep so we mark each user deleted at most once, rather than

@@ -35,6 +35,13 @@ describe("workspace_admins", () => {
     expect((await listWorkspaceAdminIds(db, 22)).size).toBe(0);
   });
 
+  it("does not remove a bootstrap-source admin via removeWorkspaceAdmin", async () => {
+    await upsertWorkspace(db, { id: 23, name: "w23" });
+    await addWorkspaceAdmin(db, 23, "U_boot", "bootstrap");
+    await removeWorkspaceAdmin(db, 23, "U_boot"); // no-op: only removes membership rows
+    expect((await listWorkspaceAdminIds(db, 23)).size).toBe(1);
+  });
+
   it("tracks a user that administers multiple workspaces", async () => {
     await upsertWorkspace(db, { id: 30, name: "a" });
     await upsertWorkspace(db, { id: 31, name: "b" });

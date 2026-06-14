@@ -27,12 +27,15 @@ export async function removeWorkspaceAdmin(
   workspaceId: number,
   slackUserId: string
 ): Promise<void> {
+  // Only revoke membership-granted rights. Bootstrap-granted admins must be
+  // removed explicitly through an admin operation, not by event/reconcile.
   await db
     .delete(schema.workspaceAdmins)
     .where(
       and(
         eq(schema.workspaceAdmins.workspaceId, workspaceId),
-        eq(schema.workspaceAdmins.slackUserId, slackUserId)
+        eq(schema.workspaceAdmins.slackUserId, slackUserId),
+        eq(schema.workspaceAdmins.source, "membership")
       )
     );
 }

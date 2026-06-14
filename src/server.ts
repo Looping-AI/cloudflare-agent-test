@@ -12,8 +12,8 @@ import {
   scheduleTask,
   getScheduledTasks,
   cancelScheduledTask
-} from "./tools";
-import { handleSlackEvent } from "./slack-webhook-handler";
+} from "@/tools";
+import { handleSlackEvent } from "@/slack-webhook-handler";
 import { reconcile } from "@/services/reconcile";
 
 // Cloudflare resolves Workflow `class_name`s (wrangler.jsonc) from the entry
@@ -137,13 +137,6 @@ If the user asks to schedule a task, use the scheduleTask tool.`,
   }
 
   async onRequest(request: Request): Promise<Response> {
-    const body = (await request
-      .clone()
-      .json()
-      .catch(() => ({}))) as { type?: string; challenge?: string };
-    if (body.type === "url_verification") {
-      return Response.json({ challenge: body.challenge });
-    }
     return this.slack.handleWebhook(request);
   }
 }

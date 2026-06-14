@@ -4,42 +4,14 @@ import {
   SlackWebhookVerificationError
 } from "@chat-adapter/slack/webhook";
 import type { SlackWebhookPayload } from "@chat-adapter/slack/webhook";
-
-// ---------------------------------------------------------------------------
-// Params passed into Workflows — must be Rpc.Serializable (plain JSON types).
-// ---------------------------------------------------------------------------
-
-export interface MessageWorkflowParams {
-  eventId: string;
-  eventType: "app_mention" | "message";
-  channelId: string;
-  threadTs: string;
-  ts: string;
-  userId?: string;
-  teamId?: string;
-  text: string;
-  raw: Record<string, unknown>;
-}
-
-export interface LifecycleWorkflowParams {
-  eventId: string;
-  type: string;
-  subtype?: string;
-  channelId?: string;
-  userId?: string;
-  teamId?: string;
-  raw: Record<string, unknown>;
-}
-
-// ---------------------------------------------------------------------------
-// Classification — the routing verdict produced by classifyEvent()
-// ---------------------------------------------------------------------------
-
-export type Classification =
-  | { kind: "challenge"; challenge: string }
-  | { kind: "message"; params: MessageWorkflowParams }
-  | { kind: "lifecycle"; params: LifecycleWorkflowParams }
-  | { kind: "ignore"; reason: string };
+import { isRecord, str } from "@/util/json";
+import { pickDisplayName } from "@/util/display-name";
+import type {
+  MessageWorkflowParams,
+  LifecycleWorkflowParams,
+  Classification
+} from "@/slack/types";
+export type { MessageWorkflowParams, LifecycleWorkflowParams, Classification };
 
 const LIFECYCLE_EVENT_TYPES = new Set([
   "member_joined_channel",
@@ -48,14 +20,6 @@ const LIFECYCLE_EVENT_TYPES = new Set([
 ]);
 
 const MESSAGE_EDIT_SUBTYPES = new Set(["message_changed", "message_deleted"]);
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
-
-function str(value: unknown): string | undefined {
-  return typeof value === "string" ? value : undefined;
-}
 
 function userIdOf(value: unknown): string | undefined {
   if (typeof value === "string") return value;
@@ -143,6 +107,21 @@ export function classifyEvent(payload: SlackWebhookPayload): Classification {
           MESSAGE_EDIT_SUBTYPES.has(subtype));
 
       if (isLifecycle) {
+        // For team_join, the user field is an object — extract the display name
+        // here so the Workflow handler receives it directly on params.displayName
+        // rather than re-digging the raw envelope.
+        let displayName: string | null = null;
+        if (eventType === "team_join") {
+          const user = event && isRecord(event.user) ? event.user : undefined;
+          const profile =
+            user && isRecord(user.profile) ? user.profile : undefined;
+          displayName = pickDisplayName(
+            str(profile?.display_name),
+            str(profile?.real_name),
+            str(user?.name)
+          );
+        }
+
         return {
           kind: "lifecycle",
           params: {
@@ -152,6 +131,7 @@ export function classifyEvent(payload: SlackWebhookPayload): Classification {
             channelId: event ? str(event.channel) : undefined,
             userId: event ? userIdOf(event.user) : undefined,
             teamId: envelope ? str(envelope.team_id) : undefined,
+            displayName,
             raw: envelope ?? {}
           }
         };
@@ -172,12 +152,13 @@ export function classifyEvent(payload: SlackWebhookPayload): Classification {
 
 const OK = () => new Response("ok", { status: 200 });
 
-// Matches the error Cloudflare Workflows throws when create() is called with an
-// id that already exists within the retention window. Broad match because the
-// exact message isn't documented; tighten after confirming against wrangler dev.
+// Matches the error Cloudflare Workflows throws when create() is called with a
+// duplicate instance id (Slack retry delivering the same event_id). The message
+// always contains "already exists"; the broader "duplicate" arm was a guess and
+// has been dropped to avoid false positives on unrelated errors.
 function isInstanceExistsError(err: unknown): boolean {
   const message = err instanceof Error ? err.message : String(err);
-  return /already exists|duplicate/i.test(message);
+  return /already exists/i.test(message);
 }
 
 async function triggerWorkflow(

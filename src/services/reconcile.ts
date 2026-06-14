@@ -54,6 +54,12 @@ export async function reconcile(env: ReconcileEnv): Promise<ReconcileResult> {
     await setWorkspaceAdminChannel(db, ORG_WORKSPACE_ID, channelId);
   }
 
+  // isOrgAdmin is determined solely by membership in the looping_org_admin
+  // channel — not by Slack workspace owner/admin flags.
+  const orgAdminIds = channelId
+    ? await fetchChannelMemberIds(env, channelId)
+    : new Set<string>();
+
   // 1. Users — authoritative for owner/admin flags. A mid-pagination throw
   //    short-circuits before the deactivation sweep, so we never mark users
   //    deleted off partial data.
@@ -65,7 +71,7 @@ export async function reconcile(env: ReconcileEnv): Promise<ReconcileResult> {
       slackUserId: u.id,
       displayName: u.displayName,
       isPrimaryOwner: u.isPrimaryOwner,
-      isOrgAdmin: u.isOrgAdmin,
+      isOrgAdmin: orgAdminIds.has(u.id),
       slackTeamId: u.teamId ?? null,
       deleted: u.deleted
     });

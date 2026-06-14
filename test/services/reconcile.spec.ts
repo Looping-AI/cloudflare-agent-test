@@ -15,7 +15,7 @@ const db = getDb(env);
 afterEach(() => vi.unstubAllGlobals());
 
 describe("reconcile — users", () => {
-  it("syncs owner/admin flags and display names from users.list", async () => {
+  it("syncs display names and isPrimaryOwner from users.list", async () => {
     stubSlack((method) => {
       if (method === "auth.test") return { ok: true, user_id: "UBOT" };
       if (method === "conversations.list") return { ok: true, channels: [] };
@@ -23,17 +23,50 @@ describe("reconcile — users", () => {
         return {
           ok: true,
           members: [
-            { id: "U1", profile: { real_name: "One" }, is_admin: true },
+            {
+              id: "U1",
+              profile: { real_name: "One" },
+              is_primary_owner: true
+            },
             { id: "U2", name: "two" }
           ]
         };
       return { ok: true };
     });
     const r = await reconcile(env);
-    expect((await getSlackUser(db, "U1"))?.isOrgAdmin).toBe(true);
+    expect((await getSlackUser(db, "U1"))?.isPrimaryOwner).toBe(true);
     expect((await getSlackUser(db, "U1"))?.displayName).toBe("One");
-    expect((await getSlackUser(db, "U2"))?.isOrgAdmin).toBe(false);
+    expect((await getSlackUser(db, "U2"))?.isPrimaryOwner).toBe(false);
     expect(r.usersUpserted).toBe(2);
+  });
+
+  it("sets isOrgAdmin from looping_org_admin channel membership, not workspace flags", async () => {
+    stubSlack((method, body) => {
+      if (method === "auth.test") return { ok: true, user_id: "UBOT" };
+      if (method === "conversations.list")
+        return {
+          ok: true,
+          channels: [{ id: "CORG", name: "looping-org-admin" }]
+        };
+      if (method === "users.list")
+        return {
+          ok: true,
+          members: [
+            // U1: Slack workspace admin but NOT in org-admin channel
+            { id: "U1", is_admin: true },
+            // U2: no Slack admin flags but IS in org-admin channel
+            { id: "U2" }
+          ]
+        };
+      if (method === "conversations.members")
+        return body.get("channel") === "CORG"
+          ? { ok: true, members: ["U2"] }
+          : { ok: true, members: [] };
+      return { ok: true };
+    });
+    await reconcile(env);
+    expect((await getSlackUser(db, "U1"))?.isOrgAdmin).toBe(false);
+    expect((await getSlackUser(db, "U2"))?.isOrgAdmin).toBe(true);
   });
 
   it("marks a registry user absent from users.list as deleted", async () => {

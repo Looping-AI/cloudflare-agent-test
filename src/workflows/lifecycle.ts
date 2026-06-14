@@ -1,6 +1,6 @@
 import { WorkflowEntrypoint } from "cloudflare:workers";
 import type { WorkflowEvent, WorkflowStep } from "cloudflare:workers";
-import type { LifecycleWorkflowParams } from "../slack-webhook-handler";
+import type { LifecycleWorkflowParams } from "@/slack/types";
 import type { Db } from "@/db/client";
 import { getDb } from "@/db/client";
 import { upsertSlackUser } from "@/db/models/users";
@@ -16,27 +16,6 @@ import { getBotUserId } from "@/wrappers/slack";
 // Every write is idempotent: Workflow steps retry and Slack redelivers events.
 // ---------------------------------------------------------------------------
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
-function str(value: unknown): string | undefined {
-  return typeof value === "string" ? value : undefined;
-}
-
-/** Pull a display name out of a team_join envelope, if present. */
-function teamJoinDisplayName(raw: Record<string, unknown>): string | null {
-  const event = isRecord(raw.event) ? raw.event : undefined;
-  const user = event && isRecord(event.user) ? event.user : undefined;
-  if (!user) return null;
-  const profile = isRecord(user.profile) ? user.profile : undefined;
-  const display =
-    str(profile?.display_name)?.trim() ||
-    str(profile?.real_name)?.trim() ||
-    str(user.name) ||
-    null;
-  return display || null;
-}
-
 /** team_join → register the new user (flags stay default; reconcile owns them). */
 export async function handleTeamJoin(
   db: Db,
@@ -45,7 +24,7 @@ export async function handleTeamJoin(
   if (!params.userId) return;
   await upsertSlackUser(db, {
     slackUserId: params.userId,
-    displayName: teamJoinDisplayName(params.raw),
+    displayName: params.displayName ?? null,
     slackTeamId: params.teamId ?? null
   });
 }

@@ -237,7 +237,11 @@ describe("lifecycle events", () => {
     expect(res.status).toBe(200);
     expect(create).toHaveBeenCalledWith(
       expect.objectContaining({
-        params: expect.objectContaining({ type: "team_join", userId: "U9" })
+        params: expect.objectContaining({
+          type: "team_join",
+          userId: "U9",
+          displayName: "newbie"
+        })
       })
     );
   });

@@ -51,19 +51,16 @@ describe("iterateSlackUsers", () => {
     expect(users[0]).toMatchObject({
       id: "U1",
       isPrimaryOwner: true,
-      isOrgAdmin: true,
       displayName: "Owner"
     });
     expect(users[1]).toMatchObject({
       id: "U2",
       isPrimaryOwner: false,
-      isOrgAdmin: true,
       displayName: "adminuser"
     });
     expect(users[2]).toMatchObject({
       id: "U3",
-      deleted: true,
-      isOrgAdmin: false
+      deleted: true
     });
   });
 });
@@ -125,6 +122,10 @@ describe("getBotUserId", () => {
 
   it("throws on a non-ok response (e.g. missing scope)", async () => {
     stubSlack(() => ({ ok: false, error: "missing_scope" }));
-    await expect(getBotUserId(slackEnv)).rejects.toThrow(/missing_scope/);
+    // Use a distinct token so the module-level cache from the success test above
+    // doesn't short-circuit this call before auth.test can return the error.
+    await expect(
+      getBotUserId({ SLACK_BOT_TOKEN: "xoxb-error-token" })
+    ).rejects.toThrow(/missing_scope/);
   });
 });
